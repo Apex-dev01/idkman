@@ -1,0 +1,13 @@
+{
+  "name": "vercel-chat-supabase",
+  "version": "1.0.0",
+  "description": "Serverless API for a real-time chat application using Supabase.",
+  "main": "api/messages.js",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.4",
+    "firebase": "^10.12.2"
+  }
+}

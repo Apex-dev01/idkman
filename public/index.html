@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat App</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .chat-container {
+            height: calc(100vh - 5rem);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse;
+            padding: 1rem;
+        }
+        .message-bubble {
+            max-width: 75%;
+            padding: 8px 12px;
+            border-radius: 18px;
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body class="bg-gray-800 text-gray-100 font-sans">
+    
+    <div id="login-screen" class="flex flex-col items-center justify-center h-screen p-4">
+        <div class="bg-gray-700 p-8 rounded-lg shadow-xl w-full max-w-sm">
+            <h1 class="text-2xl font-bold mb-6 text-center">Join the Chat</h1>
+            <input type="text" id="username-input" placeholder="Enter your username" class="w-full p-3 rounded bg-gray-600 text-white mb-4 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500">
+            <button id="login-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded transition duration-200">Start Chatting</button>
+        </div>
+    </div>
+
+    <div id="main-chat" class="hidden h-screen flex">
+        <aside id="user-list-panel" class="w-1/4 bg-gray-900 p-4 border-r border-gray-700 flex flex-col">
+            <h2 class="text-lg font-semibold mb-4">Users</h2>
+            <div id="user-list" class="flex-grow overflow-y-auto">
+                <!-- User list will be here -->
+            </div>
+        </aside>
+
+        <div class="flex-grow flex flex-col">
+            <header class="bg-gray-900 p-4 shadow-md flex items-center justify-between">
+                <div class="flex items-center">
+                    <span id="channel-name" class="text-xl font-semibold">#general</span>
+                    <span id="status-indicator" class="ml-2 px-2 py-1 text-sm bg-green-500 text-white rounded-full">Online</span>
+                </div>
+                <div class="text-sm flex flex-col">
+                    <span>Logged in as: <span id="current-user-name" class="font-bold"></span></span>
+                    <span class="text-xs text-gray-400">ID: <span id="current-user-id"></span></span>
+                </div>
+            </header>
+
+            <main class="flex-grow p-4 chat-container">
+                <div id="message-list" class="flex flex-col-reverse">
+                    <!-- Messages will be injected here -->
+                </div>
+            </main>
+
+            <footer class="bg-gray-900 p-4">
+                <form id="message-form" class="flex items-center space-x-2">
+                    <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" class="flex-grow p-3 rounded-lg bg-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500">
+                    <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200">Send</button>
+                </form>
+            </footer>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Supabase client
+        import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+        // Get API keys from global environment variables (Canvas)
+        const supabaseUrl = typeof __supabase_url !== 'undefined' ? __supabase_url : 'YOUR_SUPABASE_URL_HERE';
+        const supabaseKey = typeof __supabase_anon_key !== 'undefined' ? __supabase_anon_key : 'YOUR_SUPABASE_ANON_KEY_HERE';
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        // UI Elements
+        const loginScreen = document.getElementById('login-screen');
+        const mainChat = document.getElementById('main-chat');
+        const usernameInput = document.getElementById('username-input');
+        const loginBtn = document.getElementById('login-btn');
+        const currentUserSpan = document.getElementById('current-user-name');
+        const currentUserIdSpan = document.getElementById('current-user-id');
+        const messageList = document.getElementById('message-list');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const userListDiv = document.getElementById('user-list');
+        const channelNameSpan = document.getElementById('channel-name');
+
+        let currentUser = null;
+        let username = '';
+        let activeChatType = 'general';
+        let activeRecipientId = null;
+        let unsubscribeFromChat = null;
+
+        // Function to handle adding messages to the DOM
+        function addMessageToDOM(msg) {
+            if (!msg.content) return;
+            const messageElement = document.createElement('div');
+            const isMine = msg.username === username;
+            
+            messageElement.classList.add('message-bubble', 'flex', 'flex-col', 'max-w-md', 'mb-2');
+            
+            if (isMine) {
+                messageElement.classList.add('bg-purple-600', 'self-end', 'rounded-br-none');
+            } else {
+                messageElement.classList.add('bg-gray-700', 'self-start', 'rounded-bl-none');
+            }
+            
+            const timestamp = new Date(msg.created_at);
+            const formattedTime = timestamp.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZoneName: 'short' });
+
+            messageElement.innerHTML = `
+                <span class="text-xs font-bold ${isMine ? 'text-gray-200' : 'text-purple-300'}">${msg.username || 'Anonymous'}</span>
+                <p class="text-sm mt-1">${msg.content}</p>
+                <span class="text-xs text-right mt-1 opacity-70">${formattedTime}</span>
+            `;
+            
+            messageList.prepend(messageElement);
+        }
+
+        // Switches the chat view and starts the correct listener
+        function switchChat(chatType, recipientId = null, recipientUsername = null) {
+            if (unsubscribeFromChat) {
+                unsubscribeFromChat.unsubscribe(); // Unsubscribe the previous listener
+            }
+
+            messageList.innerHTML = '';
+            activeChatType = chatType;
+            activeRecipientId = recipientId;
+
+            if (chatType === 'general') {
+                channelNameSpan.textContent = '#general';
+                listenToPublicChat();
+            } else if (chatType === 'dm' && recipientId && recipientUsername) {
+                channelNameSpan.textContent = `@${recipientUsername}`;
+                listenToDMs(recipientId);
+            }
+        }
+
+        // Listens to the public chat collection
+        function listenToPublicChat() {
+            // Fetch initial messages
+            fetchMessages('general');
+            
+            // Set up real-time listener for new messages
+            const realTimeChannel = supabase.channel('messages');
+            realTimeChannel.on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.general` },
+                (payload) => addMessageToDOM(payload.new)
+            ).subscribe();
+
+            unsubscribeFromChat = realTimeChannel; // Save the channel to unsubscribe later
+        }
+
+        // Listens to a specific DM channel
+        function listenToDMs(recipientId) {
+            const dmChannelId = [currentUser.id, recipientId].sort().join('_');
+            
+            // Fetch initial messages
+            fetchMessages(dmChannelId);
+
+            // Set up real-time listener for new DMs
+            const realTimeChannel = supabase.channel('dm_messages');
+            realTimeChannel.on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${dmChannelId}` },
+                (payload) => addMessageToDOM(payload.new)
+            ).subscribe();
+
+            unsubscribeFromChat = realTimeChannel;
+        }
+
+        // Fetch messages from a specific channel (public or DM)
+        async function fetchMessages(channelId) {
+            const { data: messages, error } = await supabase
+                .from('messages')
+                .select('*')
+                .eq('channel_id', channelId)
+                .order('created_at', { ascending: false })
+                .limit(50);
+            
+            if (error) {
+                console.error('Error fetching messages:', error);
+                return;
+            }
+            
+            messageList.innerHTML = '';
+            messages.forEach(addMessageToDOM);
+        }
+
+        // Fetches and displays a list of other users
+        async function fetchUsers() {
+            const { data: users, error } = await supabase
+                .from('users')
+                .select('*')
+                .neq('id', currentUser.id); // Don't show the current user in the list
+
+            if (error) {
+                console.error('Error fetching users:', error);
+                return;
+            }
+
+            userListDiv.innerHTML = '';
+            
+            const generalBtn = document.createElement('button');
+            generalBtn.textContent = '#general';
+            generalBtn.classList.add('w-full', 'text-left', 'py-2', 'px-3', 'rounded', 'hover:bg-gray-700', 'transition-colors');
+            generalBtn.addEventListener('click', () => switchChat('general'));
+            userListDiv.appendChild(generalBtn);
+
+            users.forEach(user => {
+                const userBtn = document.createElement('button');
+                userBtn.textContent = user.username;
+                userBtn.classList.add('w-full', 'text-left', 'py-2', 'px-3', 'rounded', 'hover:bg-gray-700', 'transition-colors');
+                userBtn.addEventListener('click', () => switchChat('dm', user.id, user.username));
+                userListDiv.appendChild(userBtn);
+            });
+        }
+
+        // Sets up the UI after successful login
+        async function setupChatUI(username, userId) {
+            loginScreen.classList.add('hidden');
+            mainChat.classList.remove('hidden');
+            currentUserSpan.textContent = username;
+            currentUserIdSpan.textContent = userId;
+            await fetchUsers();
+            listenToPublicChat();
+        }
+
+        // Event listener for the login button
+        loginBtn.addEventListener('click', async () => {
+            const inputUsername = usernameInput.value.trim();
+            if (!inputUsername) {
+                console.error("Please enter a username.");
+                return;
+            }
+
+            try {
+                // Use Supabase's anonymous sign-in
+                const { data, error } = await supabase.auth.signInAnonymously();
+                if (error) throw error;
+                
+                currentUser = data.user;
+                username = inputUsername;
+
+                // Save or update the user profile in the 'users' table
+                const { data: userProfile, error: profileError } = await supabase
+                    .from('users')
+                    .upsert({ id: currentUser.id, username, created_at: new Date().toISOString() }, { onConflict: 'id' });
+
+                if (profileError) throw profileError;
+
+                await setupChatUI(username, currentUser.id);
+
+            } catch (error) {
+                console.error("Login failed:", error);
+            }
+        });
+
+        // Event listener for the message form
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const content = messageInput.value.trim();
+            if (!content || !currentUser) {
+                return;
+            }
+
+            let channelId = null;
+            if (activeChatType === 'general') {
+                channelId = 'general';
+            } else if (activeChatType === 'dm' && activeRecipientId) {
+                channelId = [currentUser.id, activeRecipientId].sort().join('_');
+            }
+
+            if (!channelId) {
+                console.error("No valid channel selected.");
+                return;
+            }
+
+            try {
+                const { error } = await supabase
+                    .from('messages')
+                    .insert([
+                        {
+                            username,
+                            content,
+                            channel_id: channelId
+                        }
+                    ]);
+                
+                if (error) throw error;
+                messageInput.value = '';
+
+            } catch (error) {
+                console.error("Failed to send message:", error);
+            }
+        });
+        
+    </script>
+</body>
+</html>
